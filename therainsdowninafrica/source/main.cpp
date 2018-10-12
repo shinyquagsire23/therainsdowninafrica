@@ -7,22 +7,26 @@
 #include "types.h"
 #include "utils.h"
 
+#include <cstring>
+
+#include "core/svc_bind.h"
 #include "hos/kobjects.h"
+#include "hos/kfuncs.h"
 #include "hos/svc.h"
 #include "hos/smc.h"
 #include "arm/cache.h"
 #include "arm/tls.h"
-
+#include "arm/threading.h"
 #include "io/uart.h"
-#include "modules.h"
-#include "core/svc_bind.h"
 
-#include <cstring>
+#include "log.h"
+#include "modules.h"
 
 int svc_print_info(svcNumber svcno, u64 *regs_in, u64 *regs_out, void* handler_ptr);
 
 bool has_initted = false;
 static char g_heap[0x10000];
+u64 g_aslrBase = 0;
 
 void test_dump(u64* mem, size_t size)
 {
@@ -42,10 +46,10 @@ int bus_patch_hook(u64 *regs_in, u64 *regs_out, void* handler_ptr)
     dst = regs_in[0];
     size = regs_in[3];
 
-    uart_debug_printf("map %s from %s %016llx %016llx %016llx\r\n", new_proc->name, kproc->name, src, dst, size);
+    log_printf("map %s from %s %016llx %016llx %016llx\r\n", new_proc->name, kproc->name, src, dst, size);
     
     if (!strcmp(new_proc->name, "qlaunch"))
-        uart_debug_printf("ticks %016llx\r\n", ksvcGetSystemTick());
+        log_printf("ticks %016llx\r\n", ksvcGetSystemTick());
     // dst has NSO contents which can be searched through and patched.
     
     return 0;
@@ -75,7 +79,10 @@ void init()
     if (has_initted) return;
 
     uart_init(UART_A, 115200);
+    
+    g_aslrBase = a64_svc_tbl[1] - 0x496DC; //TODO
 
+    kfuncs_init();
     svcs_init();
     modules_init();
     
@@ -109,6 +116,6 @@ int svc_print_info(svcNumber svcno, u64 *regs_in, u64 *regs_out, void* handler_p
     
     //test_dump((u64*)&getCurrentContext()->pCurrentThread->idk, 0x6C0);
 
-    uart_debug_printf("svc %x from proc %s (tid %016llx), %p\r\n", svcno, kproc->name, kproc->tid, getTls());
+    log_printf("svc %x from proc %s (tid %016llx), %p\r\n", svcno, kproc->name, kproc->tid, getTls());
     return 0;
 }

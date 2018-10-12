@@ -29,6 +29,8 @@ typedef struct africa_header
 	u32 size;
 	u32 text_end;
 	u32 data_end;
+	u32 africa_paddr;
+	u32 africa_size;
 } africa_header;
 
 void add_entry_to_ttb1(u64 *ttb1_lv1, u32 paddr, u64 vaddr, u64 lv12mask, u64 mask)
@@ -99,6 +101,9 @@ void main(u64* ttb1)
         once = true;
         
         africa = kalloc(africa_size_rounded);
+        header->africa_paddr = africa;
+        header->africa_size = africa_size_rounded;
+
         utils_memcpy(africa, therainsdowninafrica_bin, therainsdowninafrica_bin_size);
     }
     add_mem_range_to_ttb1(ttb1, africa, AFRICA_VADDR, text_size, TTB_AP_UNO_KRO);

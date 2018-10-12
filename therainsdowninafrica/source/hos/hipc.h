@@ -115,6 +115,7 @@ struct HIPCAddrSplit
     u32 addr31to0;
     u32 addr35to32 : 4;
     u32 addr38to36 : 3;
+    u32 addr63to39 : 25;
 };
 
 struct HIPCSizeSplit
@@ -181,6 +182,7 @@ struct HIPCSendRecvExchDesc
     u32 addr31to0;
     u32 flags : 2;
     u32 addr38to36 : 3;
+    u32 gap : 19;
     u32 size35to32 : 4;
     u32 addr35to32 : 4;
 
@@ -460,6 +462,7 @@ struct HIPCCraftedPacket
 
     u64 buffers[HIPC_MAX_BUFS];
     u64 bufferSizes[HIPC_MAX_BUFS];
+    u8 bufferFlags[HIPC_MAX_BUFS];
     u8 bufferTypes[HIPC_MAX_BUFS];
 
     u64 staticBuffers[HIPC_MAX_BUFS];
@@ -522,7 +525,7 @@ struct HIPCCraftedPacket
 
         if (data)
         {
-            memcpy(data + dataSize, &arg, sizeof(arg));
+            memcpy(data + dataSize * sizeof(u32), &arg, sizeof(arg));
             dataSize += sizeof(arg)/sizeof(u32);
         }
 
@@ -539,36 +542,39 @@ struct HIPCCraftedPacket
         return this;
     }
 
-    HIPCCraftedPacket* push_send_buffer(void* buf, u64 size)
+    HIPCCraftedPacket* push_send_buffer(void* buf, u64 size, u8 flags)
     {
         if (numSend + numRecv + numExch >= HIPC_MAX_BUFS) return this;
 
         buffers[numSend + numRecv + numExch] = (u64)buf;
         bufferSizes[numSend + numRecv + numExch] = size;
+        bufferFlags[numSend + numRecv + numExch] = flags;
         bufferTypes[numSend + numRecv + numExch] = HIPCBufferType_Send;
 
         numSend++;
         return this;
     }
 
-    HIPCCraftedPacket* push_recv_buffer(void* buf, u64 size)
+    HIPCCraftedPacket* push_recv_buffer(void* buf, u64 size, u8 flags)
     {
         if (numSend + numRecv + numExch >= HIPC_MAX_BUFS) return this;
 
         buffers[numSend + numRecv + numExch] = (u64)buf;
         bufferSizes[numSend + numRecv + numExch] = size;
+        bufferFlags[numSend + numRecv + numExch] = flags;
         bufferTypes[numSend + numRecv + numExch] = HIPCBufferType_Recv;
 
         numRecv++;
         return this;
     }
 
-    HIPCCraftedPacket* push_exch_buffer(void* buf, u64 size)
+    HIPCCraftedPacket* push_exch_buffer(void* buf, u64 size, u8 flags)
     {
         if (numSend + numRecv + numExch >= HIPC_MAX_BUFS) return this;
 
         buffers[numSend + numRecv + numExch] = (u64)buf;
         bufferSizes[numSend + numRecv + numExch] = size;
+        bufferFlags[numSend + numRecv + numExch] = flags;
         bufferTypes[numSend + numRecv + numExch] = HIPCBufferType_Send;
 
         numExch++;
@@ -609,7 +615,7 @@ struct HIPCCraftedPacket
         HIPCPacket* packetTemp = (HIPCPacket*)malloc(0x400);
 
         memcpy(packetTemp, get_current_packet(), 0x400);
-        memset(packet, 0, 0x10);
+        memset(packet, 0, 0x80);
 
         packet->type = ipcType;
         packet->dataSize = dataSize + 4 /*header*/ + 4 /*padding*/;
@@ -670,6 +676,7 @@ struct HIPCCraftedPacket
 
             desc->set_addr(buffers[i]);
             desc->set_size(bufferSizes[i]);
+            desc->set_flags(bufferFlags[i]);
         }
 
         HIPCBasicPacket* basic = (HIPCBasicPacket*)packet->get_raw_data();
@@ -705,7 +712,6 @@ struct HIPCCraftedPacket
             uart_debug_printf("%x: %08x\r\n", i, ((u32*)packet)[i]);
         }
 #endif
-
         ret = ksvcSendSyncRequest(handle);
 
 #if 0
@@ -757,21 +763,21 @@ struct HIPCCraftedPacket
         {
             HIPCSendRecvExchDesc* desc = &packet->get_send_descs()[i];
 
-            push_send_buffer((void*)desc->get_addr(), desc->get_size());
+            push_send_buffer((void*)desc->get_addr(), desc->get_size(), desc->get_flags());
         }
 
         for (int i = 0; i < packet->numRecv; i++)
         {
             HIPCSendRecvExchDesc* desc = &packet->get_recv_descs()[i];
 
-            push_recv_buffer((void*)desc->get_addr(), desc->get_size());
+            push_recv_buffer((void*)desc->get_addr(), desc->get_size(), desc->get_flags());
         }
 
         for (int i = 0; i < packet->numExch; i++)
         {
             HIPCSendRecvExchDesc* desc = &packet->get_exch_descs()[i];
 
-            push_exch_buffer((void*)desc->get_addr(), desc->get_size());
+            push_exch_buffer((void*)desc->get_addr(), desc->get_size(), desc->get_flags());
         }
 
         HIPCBasicPacket* basic = packet->get_data<HIPCBasicPacket>();
@@ -843,6 +849,21 @@ struct HIPCCraftedPacket
         ret = 0;
         pidRet = 0;
         sendPid = false;
+        
+ 
+        memset(handles, 0, sizeof(handles));
+        memset(handleTypes, 0, sizeof(handleTypes));
+
+        memset(objects, 0, sizeof(objects));
+
+        memset(buffers, 0, sizeof(buffers));
+        memset(bufferSizes, 0, sizeof(bufferSizes));
+        memset(bufferFlags, 0, sizeof(bufferFlags));
+        memset(bufferTypes, 0, sizeof(bufferTypes));
+
+        memset(staticBuffers, 0, sizeof(staticBuffers));
+        memset(staticSizes, 0, sizeof(staticSizes));
+        memset(staticIdxs, 0, sizeof(staticIdxs));
     }
 };
 

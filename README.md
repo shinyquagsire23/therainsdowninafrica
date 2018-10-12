@@ -7,3 +7,4 @@ Nintendo Switch Horizon microkernel in-kernel SVC MiTM for doing literally anyth
 * Bring your own IPL, stash HBL main/main.npdm in sdmc:/hbl/
 * See LICENSE.md for license deets
 
+NOTE: Currently only adapted for 6.0.0

@@ -9,6 +9,10 @@
 
 #include "types.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define TTB_LV1_MASK 0x7FC0000000
 #define TTB_LV1_SHIFT 30
 #define TTB_LV1_ADD 0x40000000
@@ -32,5 +36,9 @@
 #define TTB_AP_URO_KRO 3
 
 extern u64* getTTB1();
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // MMU_H

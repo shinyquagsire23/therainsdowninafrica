@@ -12,6 +12,11 @@ get_core:
     and x0, x0, #0xf
     ret
 
+.global getSP_EL0
+getSP_EL0:
+    mrs x0, sp_el0
+    ret
+
 .global mutex_lock
 mutex_lock:
     mov     w1, #0x1

@@ -7,6 +7,11 @@
 #ifndef KERN_H
 #define KERN_H
 
+#include "types.h"
+
+#define H_KTHREAD  0xFFFF800
+#define H_KPROCESS 0xFFFF8001
+
 typedef void KResourceLimit; //TODO
 struct KSession;
 struct KProcess;
@@ -14,29 +19,8 @@ struct KPort;
 
 enum KObjectTypeId : u8
 {
-    KAutoObjectTypeId = 0x0,
-    KSynchronizationObjectTypeId = 0x1,
-    KReadableEventTypeId = 0x3,
-    KInterruptEventTypeId = 0x1F,
-    KDebugTypeId = 0x2D,
-    KServerSessionTypeId = 0x35,
-    KPortTypeId = 0x38,
-    KThreadTypeId = 0x4D,
-    KClientPortTypeId = 0x55,
-    KSessionTypeId = 0x58,
-    KProcessTypeId = 0x65,
-    KEventTypeId = 0x68,
-    KLightServerSessionTypeId = 0x70,
-    KServerPortTypeId = 0x8D,
-    KClientSessionTypeId = 0x94,
-    KSharedMemoryTypeId = 0x98,
-    KResourceLimitTypeTypeId = 0xA4,
-    KWritableEventTypeId = 0xA8,
-    KTransferMemoryTypeId = 0xB0,
-    KLightSessionTypeId = 0xC4,
-    KLightClientSessionTypeId = 0xC8,
-    KDeviceAddressSpaceTypeId = 0xD0,
-    KSessionRequestTypeId = 0xE0,
+    KProcessTypeId = 0x1501,
+    KClientSessionTypeId = 0xd00,
 };
 
 struct KLinkedListNode
@@ -55,7 +39,7 @@ static_assert(sizeof(KLinkedList) == 0x18, "Bad KLinkedList size");
 
 struct KAutoObject
 {
-    void *vtable;
+    void **vtable;
     u32 refcnt;
     u64 idk_0;
     void* idk_1;
@@ -213,8 +197,7 @@ struct KSpinLock
 struct KHandleEntry
 {
     u16 id;
-    u8 typeId;
-    u8 unk1;
+    u16 typeId;
     u32 unk2;
     void* obj;
 };
@@ -295,18 +278,26 @@ struct KProcess : KSynchronizationObject
 
         return nullptr;
     }
+    
+    template <class T>
+    void setKObjectForHandle(u32 handle, T* kobj)
+    {
+        KHandleEntry* entry = getHandleEntry(handle);
+        entry->id = handle >> 15;
+        entry->obj = (void*)kobj;
+    }
 };
 
 struct KThread : KSynchronizationObject
 {
     u8 idk[0x308];
-    u64 entrypoint;
-    u64 condvar_mutexuseraddr;
-    KProcess* parent;
-    void* kernel_thread_stack;
-    u64 unk0;
-    void* tls_userland;
-    void* tls_kernel;
+    u64 entrypoint; // 308+48
+    u64 condvar_mutexuseraddr; //310+48
+    KProcess* parent; // 318+48
+    void* kernel_thread_stack; // 320+48
+    u64 unk0; // 328+48
+    void* tls_userland; // 330+48
+    void* tls_kernel; // 338+48
 };
 
 struct KCurrentContext

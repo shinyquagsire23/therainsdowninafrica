@@ -6,7 +6,7 @@
 
 #include "sm.h"
 
-#include "io/uart.h"
+#include "log.h"
 #include "hos/svc.h"
 #include "hos/kobjects.h"
 #include "hos/hipc.h"
@@ -21,7 +21,31 @@
 
 //#define SM_EXTRA_DEBUG
 
+#define NUM_SD_SERVICES 4
+char* sdcard_services[NUM_SD_SERVICES] = {"pcv", "gpio", "pinmux", "psc:c"};
+bool sdcard_services_initted[NUM_SD_SERVICES] = {false, false, false, false};
+bool sdcard_usable = false;
+
 u32 loader_fspsrv_hand = 0;
+KClientSession* loader_fspsrv_sess = nullptr;
+
+u64 sm_service_to_u64(char* service)
+{
+    char tmp[9] = {0,0,0,0,0,0,0,0,0};
+    strncpy(tmp, service, 8);
+    
+    return *(u64*)tmp;
+}
+
+bool sm_is_sdcard_usable()
+{
+    return sdcard_usable;
+}
+
+KClientSession* sm_get_fspsrv()
+{
+    return loader_fspsrv_sess;
+}
 
 int sm_ipc_handler(u64 *regs_in, u64 *regs_out, void* handler_ptr)
 {
@@ -40,7 +64,7 @@ int sm_ipc_handler(u64 *regs_in, u64 *regs_out, void* handler_ptr)
         if (!basic->ret)
         {
 #ifdef SM_EXTRA_DEBUG
-            //uart_debug_printf("%s requesting service %.8s, got %x\r\n", kproc->name, &service_requested, packet->get_handle(0));
+            //log_printf("%s requesting service %.8s, got %x\r\n", kproc->name, &service_requested, packet->get_handle(0));
 #endif
             // TODO this is kinda terrible, hooks would be good for this
             if (!strcmp(kproc->name, "Loader") && !strcmp((char*)&service_requested, "fsp-ldr"))
@@ -48,10 +72,8 @@ int sm_ipc_handler(u64 *regs_in, u64 *regs_out, void* handler_ptr)
                 HIPCCraftedPacket* p = new HIPCCraftedPacket();
 
                 // Get fsp-srv handle
-                u64 service;
-                strcpy((char*)&service, "fsp-srv");
                 p->clear();
-                p->ipc_cmd(1)->push_arg<u64>(service)->send_to(regs_in[0]);
+                p->ipc_cmd(1)->push_arg<u64>(sm_service_to_u64("fsp-srv"))->send_to(regs_in[0]);
 
                 loader_fspsrv_hand = p->get_handle(0);
                 p->free_data();
@@ -64,6 +86,8 @@ int sm_ipc_handler(u64 *regs_in, u64 *regs_out, void* handler_ptr)
                 p->free_data();
 
                 delete p;
+                
+                loader_fspsrv_sess = kproc->getKObjectFromHandle<KClientSession>(loader_fspsrv_hand);
             }
             u32 handle = packet->get_handle(0);
             KClientSession* smclient = kproc->getKObjectFromHandle<KClientSession>(handle);
@@ -73,13 +97,27 @@ int sm_ipc_handler(u64 *regs_in, u64 *regs_out, void* handler_ptr)
 
         return 1;
     }
+    else if (basic->cmd == 2) // RegisterService
+    {
+        u64 service_requested = packet->get_data<u64>()[2];
+        
+        bool sdcard_gucci = true;
+        for (int i = 0; i < NUM_SD_SERVICES; i++)
+        {
+            sdcard_gucci &= sdcard_services_initted[i];
+            if (sm_service_to_u64(sdcard_services[i]) == service_requested)
+                sdcard_services_initted[i] = true;
+        }
+        
+        sdcard_usable = sdcard_gucci;
+    }
 
     return 0;
 }
 
 int test_ipc_handler(u64 *regs_in, u64 *regs_out, void* handler_ptr)
 {
-    uart_debug_printf("test handler\r\n");
+    log_printf("test handler\r\n");
 
     //bind nameless handles w/ ipc_bind_client_to_handler
     return 0;
@@ -100,7 +138,7 @@ int fsp_ldr_ifile_hook(u64 *regs_in, u64 *regs_out, void* handler_ptr)
     u32 file_domain_to_use = file_mappings.get(packet->get_domain_header()->objectId) & 0xFFFFFFFF;
 
 #ifdef SM_EXTRA_DEBUG
-    uart_debug_printf("CodeFile cmd %x from %s\r\n", basic->cmd, kproc->name);
+    log_printf("CodeFile cmd %x from %s\r\n", basic->cmd, kproc->name);
 #endif
 
     // Just swap in the handle and domain object ID
@@ -110,7 +148,7 @@ int fsp_ldr_ifile_hook(u64 *regs_in, u64 *regs_out, void* handler_ptr)
     svcRunFunc(regs_in, regs_out, handler_ptr);
 
 #ifdef SM_EXTRA_DEBUG
-    uart_debug_printf("returned %x, err %x\r\n", regs_out[0], basic->ret);
+    log_printf("returned %x, err %x\r\n", regs_out[0], basic->ret);
 #endif
 
     return 1;
@@ -143,7 +181,7 @@ int fsp_ldr_ifilesystem_hook(u64 *regs_in, u64 *regs_out, void* handler_ptr)
     HIPCBasicPacket* basic = packet->get_data<HIPCBasicPacket>();
 
 #ifdef SM_EXTRA_DEBUG
-    uart_debug_printf("CodeFileSystem cmd %x from %s\r\n", basic->cmd, kproc->name);
+    log_printf("CodeFileSystem cmd %x from %s\r\n", basic->cmd, kproc->name);
 #endif
 
     if (basic->cmd == 8)
@@ -152,7 +190,7 @@ int fsp_ldr_ifilesystem_hook(u64 *regs_in, u64 *regs_out, void* handler_ptr)
         char* file_path_raw = (char*)packet->get_static_descs()[0].get_addr();
         u32 domain_id = packet->get_domain_header()->objectId;
 #ifdef SM_EXTRA_DEBUG
-        uart_debug_printf("CodeFileSystem OpenFile(%s)\r\n", file_path_raw);
+        log_printf("CodeFileSystem OpenFile(%s)\r\n", file_path_raw);
 #endif
 
         // Pick a file which always exists, so extra files can be added
@@ -165,7 +203,7 @@ int fsp_ldr_ifilesystem_hook(u64 *regs_in, u64 *regs_out, void* handler_ptr)
         packet = get_current_packet();
         basic = packet->get_data<HIPCBasicPacket>();
 #ifdef SM_EXTRA_DEBUG
-        uart_debug_printf("returned %x, err %x, hand %x\r\n", regs_out[0], basic->ret, basic->extra[0]);
+        log_printf("returned %x, err %x, hand %x\r\n", regs_out[0], basic->ret, basic->extra[0]);
 #endif
 
         HIPCCraftedPacket* p = new HIPCCraftedPacket();
@@ -176,7 +214,7 @@ int fsp_ldr_ifilesystem_hook(u64 *regs_in, u64 *regs_out, void* handler_ptr)
 
         u32 sdcard_hand = p->get_handle(0);
 #ifdef SM_EXTRA_DEBUG
-        uart_debug_printf("sdcard got return %x, err %x handle %x\r\n", p->ret, p->ipcRet, sdcard_hand);
+        log_printf("sdcard got return %x, err %x handle %x\r\n", p->ret, p->ipcRet, sdcard_hand);
 #endif
         p->free_data();
 
@@ -192,7 +230,7 @@ int fsp_ldr_ifilesystem_hook(u64 *regs_in, u64 *regs_out, void* handler_ptr)
         file_ret = p->ret ? p->ret : p->ipcRet;
         file_hand = p->get_handle(0);
 #ifdef SM_EXTRA_DEBUG
-        uart_debug_printf("OpenFile(%s) got return %x, err %x handle %x\r\n", path_temp, p->ret, p->ipcRet, file_hand);
+        log_printf("OpenFile(%s) got return %x, err %x handle %x\r\n", path_temp, p->ret, p->ipcRet, file_hand);
 #endif
         p->free_data();
 
@@ -207,7 +245,7 @@ int fsp_ldr_ifilesystem_hook(u64 *regs_in, u64 *regs_out, void* handler_ptr)
 
             file_domain = retdata[0];
 #ifdef SM_EXTRA_DEBUG
-            uart_debug_printf("OpenFile->domain got return %x, err %x handle %x\r\n", p->ret, p->ipcRet, file_domain);
+            log_printf("OpenFile->domain got return %x, err %x handle %x\r\n", p->ret, p->ipcRet, file_domain);
 #endif
             p->free_data();
         }
@@ -253,7 +291,7 @@ int fsp_ldr_hook(u64 *regs_in, u64 *regs_out, void* handler_ptr)
     {
         u64 tid = packet->get_data<u64>()[2];
 #ifdef SM_EXTRA_DEBUG
-        uart_debug_printf("OpenCodeFileSystem(%016llx, %s) from %s, %x\r\n", tid, packet->get_static_descs()[0].get_addr(), kproc->name, packet->get_domain_header()->objectId);
+        log_printf("OpenCodeFileSystem(%016llx, %s) from %s, %x\r\n", tid, packet->get_static_descs()[0].get_addr(), kproc->name, packet->get_domain_header()->objectId);
 #endif
 
         memset(&packet->get_data<u64>()[3], 0, 0x40);
@@ -281,5 +319,5 @@ void sm_module_init()
 
     ipc_register_handler_for_named_port("fsp-ldr", (void*)fsp_ldr_hook);
 
-    uart_debug_printf("sm module initialized\r\n");
+    log_printf("sm module initialized\r\n");
 }

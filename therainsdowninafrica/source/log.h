@@ -3,11 +3,10 @@
  * This file is part of therainsdowninafrica and is distributed under the 3-clause BSD license.
  * See LICENSE.md for terms of use.
  */
+ 
+#ifndef LOG_H
+#define LOG_H
 
-.section ".text"
+void log_printf(char* fmt, ...);
 
-.global getTTB1
-get_ttb1:
-    mrs x0, ttbr1_el1
-    ret
-
+#endif // LOG_H

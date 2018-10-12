@@ -4,10 +4,11 @@
  * See LICENSE.md for terms of use.
  */
 
-.section ".text"
+#ifndef MAIN_H
+#define MAIN_H
 
-.global getTTB1
-get_ttb1:
-    mrs x0, ttbr1_el1
-    ret
+#include "types.h"
 
+extern u64 g_aslrBase;
+
+#endif // MAIN_H

@@ -14,6 +14,14 @@ _start:
 	.word (__text_end - _start)
 	.word (__data_end - _start)
 
+.global africaPAddr
+africaPAddr:
+	.word 0
+
+.global africaSize
+africaSize:
+	.word 0
+
 stub_start:
     sub sp, sp, #0x48
     str lr, [sp]

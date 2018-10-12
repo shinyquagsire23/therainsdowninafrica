@@ -14,6 +14,7 @@ extern "C" {
 extern void mutex_lock(u64* mutex);
 extern void mutex_unlock(u64* mutex);
 extern int get_core();
+extern void* getSP_EL0();
 
 #ifdef __cplusplus
 }
