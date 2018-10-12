@@ -17,7 +17,7 @@ struct KSession;
 struct KProcess;
 struct KPort;
 
-enum KObjectTypeId : u8
+enum KObjectTypeId : u16
 {
     KProcessTypeId = 0x1501,
     KClientSessionTypeId = 0xd00,
