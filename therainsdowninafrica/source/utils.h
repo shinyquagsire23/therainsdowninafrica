@@ -26,32 +26,6 @@ extern "C" {
 #define getbe32(x) swap32(*(u32*)x)
 #define getbe64(x) swap64(*(u64*)x)
 
-extern u64 alloc_lock;
-inline void* safe_malloc(size_t size)
-{
-    mutex_lock(&alloc_lock);
-    void* ret = malloc(size);
-    mutex_unlock(&alloc_lock);
-
-    return ret;
-}
-
-inline void* safe_realloc(void* ptr, size_t size)
-{
-    mutex_lock(&alloc_lock);
-    void* ret = realloc(ptr, size);
-    mutex_unlock(&alloc_lock);
-
-    return ret;
-}
-
-inline void safe_free(void* ptr)
-{
-    mutex_lock(&alloc_lock);
-    free(ptr);
-    mutex_unlock(&alloc_lock);
-}
-
 #ifdef __cplusplus
 }
 #endif

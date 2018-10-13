@@ -37,4 +37,4 @@ hook2_90058058.bin: hook2.s
 clean:
 	@cd therainsdowninafrica && make clean
 	@cd hashtagblessed && make clean
-	@rm -f hook1_900006CC.bin 0_saltedkernel_90000000.bin
+	@rm -f hook1_900006CC.bin hook2_90058058.bin 0_saltedkernel_90000000.bin

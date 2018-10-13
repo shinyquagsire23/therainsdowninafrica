@@ -1,18 +1,65 @@
+/*
+ * Copyright (c) 2015-2018, SALT.
+ * This file is part of therainsdowninafrica and is distributed under the 3-clause BSD license.
+ * See LICENSE.md for terms of use.
+ */
+
 #ifndef FS_H
 #define FS_H
 
 #include "hos/hipc.h"
 #include "hos/kobjects.h"
 
+#define IFILE_READABLE   1
+#define IFILE_WRITABLE   2
+#define IFILE_APPENDABLE 4
+#define IFILE_ALL (IFILE_READABLE | IFILE_WRITABLE | IFILE_APPENDABLE)
+
 struct Handle
 {
     u32 h;
-    
+
     Handle(u32 handle = 0) : h(handle) {}
-    
-    void close()
+
+    u32 close()
     {
-        ksvcCloseHandle(h);
+        return ksvcCloseHandle(h);
+    }
+
+    u32 toDomainId()
+    {
+        u32 domain_id = 0;
+
+        HIPCCraftedPacket* p = new HIPCCraftedPacket();
+        p->clear();
+
+        p->type(HIPCPacketType_Control)->ipc_cmd(0)->send_to(h);
+
+        domain_id = *p->get_data<u32>();
+        p->free_data();
+
+        delete p;
+
+        return domain_id;
+    }
+};
+
+struct DomainPair : Handle
+{
+    u32 d;
+    DomainPair(u32 handle = 0, u32 domain = 0) : Handle(handle), d(domain) {}
+
+    u32 closeDomain()
+    {
+        // Clean up straggling handles if we're returning errors
+        HIPCCraftedPacket* p = new HIPCCraftedPacket();
+        p->clear();
+        p->domain_cmd(HIPCDomainCommand_CloseVirtualHandle)->send_to_domain(h, d);
+        p->free_data();
+
+        delete p;
+
+        return p->ret;
     }
 };
 
@@ -61,7 +108,7 @@ struct IFileSystem : Handle
 {
     IFileSystem(u32 handle = 0) : Handle(handle) {}
 
-    u32 createFile(char* path, u64 size = 0)
+    u32 createFile(const char* path, u64 size = 0)
     {
         HIPCPacket* packet = get_current_packet();
         HIPCCraftedPacket* p = new HIPCCraftedPacket();
@@ -79,7 +126,7 @@ struct IFileSystem : Handle
         return p->ret ? p->ret : p->ipcRet;
     }
 
-    u32 deleteFile(char* path)
+    u32 deleteFile(const char* path)
     {
         HIPCPacket* packet = get_current_packet();
         HIPCCraftedPacket* p = new HIPCCraftedPacket();
@@ -97,7 +144,7 @@ struct IFileSystem : Handle
         return p->ret ? p->ret : p->ipcRet;
     }
     
-    u32 openFile(char* path, u32 flags, IFile* out)
+    u32 openFile(const char* path, u32 flags, IFile* out)
     {
         HIPCPacket* packet = get_current_packet();
         HIPCCraftedPacket* p = new HIPCCraftedPacket();
@@ -131,7 +178,9 @@ struct FspSrv : Handle
 
         *out = IFileSystem(p->get_handle(0));
         p->free_data();
-        
+
+        delete p;
+
         return p->ret ? p->ret : p->ipcRet;
     }
 };

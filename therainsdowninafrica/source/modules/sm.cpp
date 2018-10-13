@@ -10,6 +10,7 @@
 #include "hos/svc.h"
 #include "hos/kobjects.h"
 #include "hos/hipc.h"
+#include "hos/fs.h"
 #include "core/svc_bind.h"
 #include "arm/threading.h"
 
@@ -186,16 +187,27 @@ int fsp_ldr_ifilesystem_hook(u64 *regs_in, u64 *regs_out, void* handler_ptr)
 
     if (basic->cmd == 8)
     {
-        char* file_path = (char*)malloc(0x301);
+        FspSrv fsp = FspSrv(loader_fspsrv_hand);
+        IFileSystem sdcard;
+        IFile logfile;
+        u32 ret, file_ret;
+
+        char* file_path;
         char* file_path_raw = (char*)packet->get_static_descs()[0].get_addr();
         u32 domain_id = packet->get_domain_header()->objectId;
 #ifdef SM_EXTRA_DEBUG
         log_printf("CodeFileSystem OpenFile(%s)\r\n", file_path_raw);
 #endif
 
+        // Get SD card handle, if we can't get a handle then let it be
+        ret = fsp.openSdCardFileSystem(&sdcard);
+        if (ret) return 0;
+
         // Pick a file which always exists, so extra files can be added
         // and ones which don't exist can error out
-        strcpy(file_path, file_path_raw);
+        file_path = (char*)malloc(0x301);
+        strcpy(file_path, hbl_path);
+        strcat(file_path, file_path_raw);
         strcpy(file_path_raw, "/main");
 
         svcRunFunc(regs_in, regs_out, handler_ptr);
@@ -206,52 +218,12 @@ int fsp_ldr_ifilesystem_hook(u64 *regs_in, u64 *regs_out, void* handler_ptr)
         log_printf("returned %x, err %x, hand %x\r\n", regs_out[0], basic->ret, basic->extra[0]);
 #endif
 
-        HIPCCraftedPacket* p = new HIPCCraftedPacket();
-
-        // Get SD card handle
-        p->clear();
-        p->ipc_cmd(18)->push_arg<u64>(0)->send_to(loader_fspsrv_hand);
-
-        u32 sdcard_hand = p->get_handle(0);
-#ifdef SM_EXTRA_DEBUG
-        log_printf("sdcard got return %x, err %x handle %x\r\n", p->ret, p->ipcRet, sdcard_hand);
-#endif
-        p->free_data();
-
         // Get hbl/<file> handle
-        u32 file_hand, file_ret;
-        p->clear();
+        file_ret = sdcard.openFile(file_path, IFILE_READABLE, &logfile);
 
-        char* path_temp = (char*)packet + 0x80;
-        strcpy(path_temp, hbl_path);
-        strcat(path_temp, file_path);
-
-        p->ipc_cmd(8)->push_arg<u32>(1)->push_static_buffer(path_temp, 0x301)->send_to(sdcard_hand);
-        file_ret = p->ret ? p->ret : p->ipcRet;
-        file_hand = p->get_handle(0);
 #ifdef SM_EXTRA_DEBUG
-        log_printf("OpenFile(%s) got return %x, err %x handle %x\r\n", path_temp, p->ret, p->ipcRet, file_hand);
+        log_printf("OpenFile(%s) got return %x, handle %x\r\n", file_path, file_ret, logfile.h);
 #endif
-        p->free_data();
-
-        // Convert to domain
-        u32 file_domain;
-        if (!file_ret)
-        {
-            p->clear();
-
-            p->type(HIPCPacketType_Control)->ipc_cmd(0)->send_to(file_hand);
-            u32* retdata = p->get_data<u32>();
-
-            file_domain = retdata[0];
-#ifdef SM_EXTRA_DEBUG
-            log_printf("OpenFile->domain got return %x, err %x handle %x\r\n", p->ret, p->ipcRet, file_domain);
-#endif
-            p->free_data();
-        }
-
-        ksvcCloseHandle(sdcard_hand);
-        free(file_path);
 
         // Map output returns to SD returns
         basic = packet->get_data<HIPCBasicPacket>();
@@ -259,19 +231,19 @@ int fsp_ldr_ifilesystem_hook(u64 *regs_in, u64 *regs_out, void* handler_ptr)
 
         if (!file_ret)
         {
-            file_mappings.set(basic->extra[0], ((u64)file_hand << 32) | file_domain);
+            u32 file_domain = logfile.toDomainId();
+            file_mappings.set(basic->extra[0], ((u64)logfile.h << 32) | file_domain);
             ipc_bind_domainsessionpair_to_handler(client, basic->extra[0], (void*)fsp_ldr_ifile_hook);
             ipc_bind_domainsessionpair_to_closehandler(client, basic->extra[0], (void*)fsp_ldr_ifile_closehook);
         }
         else
         {
-            // Clean up straggling handles if we're returning errors
-            p->clear();
-            p->domain_cmd(HIPCDomainCommand_CloseVirtualHandle)->send_to_domain(regs_in[0], domain_id);
-            p->free_data();
+            DomainPair pair(regs_in[0], domain_id);
+            pair.closeDomain();
         }
 
-        delete p;
+        sdcard.close();
+        free(file_path);
 
         return 1;
     }
@@ -293,8 +265,6 @@ int fsp_ldr_hook(u64 *regs_in, u64 *regs_out, void* handler_ptr)
 #ifdef SM_EXTRA_DEBUG
         log_printf("OpenCodeFileSystem(%016llx, %s) from %s, %x\r\n", tid, packet->get_static_descs()[0].get_addr(), kproc->name, packet->get_domain_header()->objectId);
 #endif
-
-        memset(&packet->get_data<u64>()[3], 0, 0x40);
 
         svcRunFunc(regs_in, regs_out, handler_ptr);
 
