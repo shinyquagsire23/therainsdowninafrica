@@ -279,6 +279,7 @@ int fsp_srv_hook(u64 *regs_in, u64 *regs_out, void* handler_ptr, void* extra)
     HIPCPacket* packet = get_current_packet();
     HIPCBasicPacket* basic = packet->get_data<HIPCBasicPacket>();
 
+#if 0
     if (basic->cmd == 18) // OpenSdCardFileSystem
     {
         
@@ -305,6 +306,7 @@ int fsp_srv_hook(u64 *regs_in, u64 *regs_out, void* handler_ptr, void* extra)
 
         return 1;
     }
+#endif
 
     return 0;
 }
