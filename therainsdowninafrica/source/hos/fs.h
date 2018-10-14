@@ -175,6 +175,28 @@ struct IFileSystem : Handle
 
         return retval;
     }
+
+    u32 openDirectory(const char* path, u64 flags, Handle* out)
+    {
+        HIPCPacket* packet = get_current_packet();
+        HIPCCraftedPacket* p = new HIPCCraftedPacket();
+
+        p->clear();
+
+        char* path_temp = (char*)packet + 0x80;
+        strcpy(path_temp, path);
+
+        p->ipc_cmd(9)->push_arg<u64>(flags)->push_static_buffer(path_temp, 0x301)->send_to(h);
+        p->free_data();
+
+        *out = Handle(p->get_handle(0)); //TODO IDirectory
+
+        u32 retval = p->ret ? p->ret : p->ipcRet;
+
+        delete p;
+
+        return retval;
+    }
 };
 
 struct FspSrv : Handle

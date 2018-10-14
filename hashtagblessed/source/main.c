@@ -13,11 +13,13 @@
 #include "io/pinmux.h"
 #include "io/uart.h"
 #include "arm/mmu.h"
+#include "arm/cache.h"
 
 #define AFRICA_VADDR 0xffffffff00000000
 
 void* (*kalloc)(u64 size) = 0x80060874; //TODO: search
 extern void svc_intr_hook();
+extern void except_hook();
 
 bool once = false;
 void *africa = NULL;
@@ -25,12 +27,15 @@ void *africa = NULL;
 typedef struct africa_header
 {
 	u32 start;
+	u32 except_start;
 	u32 magic;
 	u32 size;
 	u32 text_end;
 	u32 data_end;
 	u32 africa_paddr;
 	u32 africa_size;
+	u32 except_shift;
+	u32 except_shift_svca64
 } africa_header;
 
 void add_entry_to_ttb1(u64 *ttb1_lv1, u32 paddr, u64 vaddr, u64 lv12mask, u64 mask)
@@ -87,6 +92,25 @@ void patch_svc_a64()
     }
     
     utils_memcpy((void*)svc64_blr-4, svc_intr_hook, 8);
+
+    africa_header *header = (africa_header*)africa;
+    header->except_shift_svca64 = svc64_blr-0x80060000+0x4;
+}
+
+void patch_exception()
+{
+    u32 exception_hook = 0;
+
+    for (exception_hook = 0x80060000; exception_hook; exception_hook += 0x4)
+    {
+        if (*(u32*)exception_hook == 0xD5385201)
+            break;
+    }
+
+    utils_memcpy((void*)exception_hook-4, except_hook, 12);
+
+    africa_header *header = (africa_header*)africa;
+    header->except_shift = exception_hook-0x80060000+0x8;
 }
 
 void main(u64* ttb1)
@@ -99,12 +123,13 @@ void main(u64* ttb1)
     if (!once)
     {
         once = true;
-        
+
         africa = kalloc(africa_size_rounded);
         header->africa_paddr = africa;
         header->africa_size = africa_size_rounded;
 
         utils_memcpy(africa, therainsdowninafrica_bin, therainsdowninafrica_bin_size);
+        dcache_flush((void*)africa, therainsdowninafrica_bin_size);
     }
     add_mem_range_to_ttb1(ttb1, africa, AFRICA_VADDR, text_size, TTB_AP_UNO_KRO);
     add_mem_range_to_ttb1(ttb1, africa + text_size, AFRICA_VADDR + text_size, data_size, TTB_AP_UNO_KRW);
@@ -114,4 +139,5 @@ void main(u64* ttb1)
     add_io_range_to_ttb1(ttb1, PINMUX_PADDR, PINMUX_VADDR, 0x1000, TTB_AP_UNO_KRW);
     add_io_range_to_ttb1(ttb1, UART_PADDR, UART_VADDR, 0x1000, TTB_AP_UNO_KRW);
     patch_svc_a64();
+    patch_exception();
 }

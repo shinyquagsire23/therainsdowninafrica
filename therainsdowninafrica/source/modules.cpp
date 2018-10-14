@@ -7,10 +7,12 @@
 #include "modules.h"
 
 #include "modules/sm.h"
+#include "modules/fsp.h"
 #include "modules/ipc.h"
 
 void modules_init(void)
 {
     ipc_module_init();
     sm_module_init();
+    fsp_module_init();
 }

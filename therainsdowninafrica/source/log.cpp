@@ -14,6 +14,8 @@
 #include "hos/kfuncs.h"
 #include "hos/svc.h"
 #include "hos/fs.h"
+#include "arm/threading.h"
+#include "arm/cache.h"
 
 u64 log_lock;
 char log_buffer[0x200];
@@ -37,14 +39,13 @@ void log_printf(char* fmt, ...)
     if (sm_is_sdcard_usable())
     {
         HIPCPacket* packet = get_current_packet();
-        KClientSession* fspsrv = sm_get_fspsrv();
         FspSrv fsp;
         IFileSystem sdcard;
         IFile logfile;
         u32 ret, file_hand, file_ret;
         u64 pos;
 
-        kproc_add_handle(&getCurrentContext()->pCurrentProcess->handleTable, (u32*)&fsp, fspsrv, KClientSessionTypeId);
+        fsp = sm_get_fspsrv();
 
         ret = fsp.openSdCardFileSystem(&sdcard);
         if (ret)

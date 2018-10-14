@@ -10,9 +10,12 @@
 #include "types.h"
 #include "kobjects.h"
 
+#define AFRICA_KADDR 0xffffffff00000000
+
 extern u64 (*kproc_add_handle)(KProcessHandleTable* table, u32* out, void* obj, u16 id);
 extern u32 (*kproc_map_mem)(KMemoryManager* memmanage, u64 paddr, u64 size, u8 perms);
 extern u32 (*kproc_query_mem)(struct MemoryInfo* meminfo, u32* pageinfo, u32 kproc_hand, u64 addr);
+extern void (*kprintf)(char* fmt, ...);
 
 void kfuncs_init();
 u64 find_vaddr_for_paddr(u64 paddr);

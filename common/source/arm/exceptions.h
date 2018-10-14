@@ -4,8 +4,8 @@
  * See LICENSE.md for terms of use.
  */
 
-#ifndef ARM_CACHE_H
-#define ARM_CACHE_H
+#ifndef ARM_EXCEPTIONS_H
+#define ARM_EXCEPTIONS_H
 
 #include "types.h"
 
@@ -13,13 +13,12 @@
 extern "C" {
 #endif
 
-void dcache_flush_invalidate(void* addr, size_t size);
-void dcache_invalidate(void* addr, size_t size);
-void dcache_flush(void* addr, size_t size);
-void dcache_zero(void* addr, size_t size);
+u32 get_esr_el1();
+u32 get_afsr0_el1();
+u32 get_afsr1_el1(); 
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif // ARM_CACHE_H
+#endif // ARM_EXCEPTIONS_H

@@ -112,11 +112,12 @@ void uart_wait_for_write(int id);
 int uart_read_blocking(int id, u8 *data, u32 size, int timeout);
 int uart_read_nonblocking(int id, u8 *data, u32 size);
 
+extern u64 uart_print_lock;
 extern u64 uart_lock;
 extern char log_buf[0x200];
 
 #define uartDebugPrint(str) \
-    { uart_init(UART_A, 115200); uart_write(UART_A, (u8*)str, strlen(str)); uart_wait_for_write(UART_A); }
+    { mutex_lock(&uart_print_lock); uart_init(UART_A, 115200); uart_write(UART_A, (u8*)str, strlen(str)); uart_wait_for_write(UART_A); mutex_unlock(&uart_print_lock); }
 
 #define uart_debug_printf(...) \
     { mutex_lock(&uart_lock); snprintf(log_buf, 0x200, __VA_ARGS__); \

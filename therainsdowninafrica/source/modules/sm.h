@@ -8,9 +8,10 @@
 #define MODULES_SM_H
 
 #include "hos/kobjects.h"
+#include "hos/fs.h"
 
 void sm_module_init();
 bool sm_is_sdcard_usable();
-KClientSession* sm_get_fspsrv();
+FspSrv sm_get_fspsrv();
 
 #endif // MODULES_SM_H

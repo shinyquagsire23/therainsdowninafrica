@@ -34,6 +34,10 @@ kern = kern[:0x32548] + patch2[4:8] + kern[0x32548+4:]
 kern = kern[:0x32588] + patch2[8:12] + kern[0x32588+4:]
 kern = kern[:0x32598] + patch2[12:16] + kern[0x32598+4:]
 
+# allow smcPanic, kprintf
+kern = kern[:0x57F58] + patch1[:4] + kern[0x57F58+4:]
+kern = kern[:0x57560] + patch1[:4] + kern[0x57560+4:]
+
 open(sys.argv[6], "wb").write(kern)
 
 

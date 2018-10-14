@@ -25,7 +25,7 @@ INCLUDES	:=	include source ../common/source
 #---------------------------------------------------------------------------------
 # options for code generation
 #---------------------------------------------------------------------------------
-ARCH	:=	-march=armv8-a -mtune=cortex-a57 -mtp=soft -fPIE
+ARCH	:=	-march=armv8-a+nofp -mtune=cortex-a57 -mtp=soft -fPIE
 
 CFLAGS	:=	-g -Wall -ffunction-sections -fno-zero-initialized-in-bss -ffreestanding \
             $(ARCH) $(INCLUDE) -lgcc

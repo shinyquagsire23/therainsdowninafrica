@@ -208,15 +208,23 @@ int sendSyncRequest_handler(u64 *regs_in, u64 *regs_out, void* handler_ptr)
             if (packet->get_domain_header()->cmd == HIPCDomainCommand_CloseVirtualHandle)
             {
                 handler_pair = clientdomainpair_to_closehandler.get(p);
-                clientdomainpair_to_handler.clear(p);
-                clientdomainpair_to_closehandler.clear(p);
 
                 if (handler_pair.handler)
                 {
-                    void (*handler)(void* extra) = (void(*)(void* extra))handler_pair.handler;
-                    handler(handler_pair.extra);
+                    int (*handler)(void* extra) = (int(*)(void* extra))handler_pair.handler;
+                    handler_handled = handler(handler_pair.extra);
 
                     handler_pair.handler = nullptr;
+
+                    if (handler_handled)
+                    {
+                        regs_out[0] = 0;
+                    }
+                    else
+                    {
+                        clientdomainpair_to_handler.clear(p);
+                        clientdomainpair_to_closehandler.clear(p);
+                    }
                 }
             }
             else

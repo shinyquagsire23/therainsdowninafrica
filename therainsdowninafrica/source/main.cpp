@@ -17,6 +17,7 @@
 #include "arm/cache.h"
 #include "arm/tls.h"
 #include "arm/threading.h"
+#include "arm/fpu.h"
 #include "io/uart.h"
 
 #include "log.h"
@@ -26,7 +27,6 @@ int svc_print_info(svcNumber svcno, u64 *regs_in, u64 *regs_out, void* handler_p
 
 bool has_initted = false;
 static char g_heap[0x10000];
-u64 g_aslrBase = 0;
 
 void test_dump(u64* mem, size_t size)
 {
@@ -75,17 +75,17 @@ void init()
     extern char* fake_heap_end;
     fake_heap_start = &g_heap[0];
     fake_heap_end   = &g_heap[sizeof g_heap];
-    
+
+    enable_fp();
+
     if (has_initted) return;
 
     uart_init(UART_A, 115200);
-    
-    g_aslrBase = a64_svc_tbl[1] - 0x496DC; //TODO
 
     kfuncs_init();
     svcs_init();
     modules_init();
-    
+
     // Bind SVCs
     //svc_pre_bind(idAll, (void*)svc_print_info);
     svc_pre_bind(idUnmapProcessMemory, (void*)bus_patch_hook);
@@ -107,8 +107,6 @@ void main(u64 svcno, u64 *regs_in, u64 *regs_out, void* handler_ptr)
     // artificial lag test
     //ksvcSleepThread(1000 * 500);
 }
-
-
 
 int svc_print_info(svcNumber svcno, u64 *regs_in, u64 *regs_out, void* handler_ptr)
 {

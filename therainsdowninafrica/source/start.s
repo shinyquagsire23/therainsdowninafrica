@@ -6,9 +6,12 @@
 
 .section ".crt0","ax"
 
+.extern exception_handle
+
 .global _start
 _start:
 	b stub_start
+	b except_start
 	.ascii "SALT"
 	.word (__idk__ - _start)
 	.word (__text_end - _start)
@@ -22,6 +25,12 @@ africaPAddr:
 africaSize:
 	.word 0
 
+hook_lr_shift:
+    .word 0
+
+hook_lr_shift_svca64:
+    .word 0
+
 stub_start:
     sub sp, sp, #0x48
     str lr, [sp]
@@ -30,6 +39,11 @@ stub_start:
     adr x0, a64_svc_tbl
     str x10, [x0]
     
+    adr x0, g_aslrBase
+    ldr w1, hook_lr_shift_svca64
+    sub x1, lr, x1
+    str x1, [x0]
+
     # svcno, args, func
     mov x0, x8
     add x1, sp, #0x48
@@ -48,9 +62,34 @@ stub_start:
     ldr lr, [sp]
     add sp, sp, #0x48
     ret
+
+except_start:
+    sub sp, sp, #0x10
+    str lr, [sp]
+
+    ldr w2, hook_lr_shift
+    mov x1, lr
+    sub x1, x1, x2
+    adr x2, g_aslrBase
+    str x1, [x2]
+
+    bl exception_handle
     
+    ldr w9, [x0,#0x108]
+    mrs x1, esr_el1
+    mrs x3, afsr0_el1
+    mrs x4, afsr1_el1
+
+    ldr lr, [sp]
+    add sp, sp, #0x10
+    ret
+
     .pool
     
 .section ".data"
 .global a64_svc_tbl
 a64_svc_tbl: .dword 0x0
+
+.global g_aslrBase
+g_aslrBase:
+    .word 0

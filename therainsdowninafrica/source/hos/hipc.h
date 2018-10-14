@@ -404,6 +404,11 @@ struct HIPCPacket
         }
 
         uart_debug_printf("data is_domain %x, [0] %x\r\n", is_domain_message(), get_data<u32>()[0]);
+
+        for (int i = 0; i < 0x20; i++)
+        {
+            uart_debug_printf("%x: %08x\r\n", i, ((u32*)this)[i]);
+        }
     }
 };
 
@@ -482,6 +487,7 @@ struct HIPCCraftedPacket
     u64 pidRet;
 
     bool sendPid;
+    bool isDomain;
 
     HIPCCraftedPacket()
     {
@@ -509,6 +515,12 @@ struct HIPCCraftedPacket
     HIPCCraftedPacket* ipc_cmd(u32 cmd)
     {
         ipcCmd = cmd;
+        return this;
+    }
+
+    HIPCCraftedPacket* ipc_ret(u32 ret)
+    {
+        ipcRet = ret;
         return this;
     }
 
@@ -611,16 +623,18 @@ struct HIPCCraftedPacket
 
     HIPCCraftedPacket* send_to_domain(u32 domain, u32 handle)
     {
-        domainId = domain;
-        return send_to(handle);
+        return to_domain(domain)->send_to(handle);
     }
 
-    HIPCCraftedPacket* send_to(u32 handle)
+    HIPCCraftedPacket* to_domain(u32 domain)
     {
-        HIPCPacket* packet = get_current_packet();
-        HIPCPacket* packetTemp = (HIPCPacket*)malloc(0x400);
+        isDomain = true;
+        domainId = domain;
+        return this;
+    }
 
-        memcpy(packetTemp, get_current_packet(), 0x400);
+    HIPCCraftedPacket* craft_to(HIPCPacket* packet, bool reply = true)
+    {
         memset(packet, 0, 0x80);
 
         packet->type = ipcType;
@@ -686,7 +700,7 @@ struct HIPCCraftedPacket
         }
 
         HIPCBasicPacket* basic = (HIPCBasicPacket*)packet->get_raw_data();
-        if (domainId)
+        if (isDomain)
         {
             HIPCDomainHeader* domain = packet->get_domain_header();
             packet->dataSize += 4;
@@ -707,9 +721,21 @@ struct HIPCCraftedPacket
              basic->token = ipcToken;
         }
 
-        basic->magic = MAGIC_SFCI;
+        basic->magic = reply ? MAGIC_SFCO : MAGIC_SFCI;
         basic->cmd = ipcCmd;
         memcpy((void*)basic->extra, data, dataSize*sizeof(u32));
+
+        return this;
+    }
+
+    HIPCCraftedPacket* send_to(u32 handle)
+    {
+        HIPCPacket* packet = get_current_packet();
+        HIPCPacket* packetTemp = (HIPCPacket*)malloc(0x400);
+
+        memcpy(packetTemp, get_current_packet(), 0x400);
+
+        craft_to(packet, false);
 
 #if 0
         uart_debug_printf("sent:\r\n");
@@ -797,6 +823,7 @@ struct HIPCCraftedPacket
             domainId = domain->objectId;
             dataSize = domain->dataPayloadSize;
             ipcToken = domain->token;
+            isDomain = true;
         }
         else
         {
@@ -837,6 +864,7 @@ struct HIPCCraftedPacket
         ipcToken = 0;
         domainCmd = HIPCDomainCommand_Send;
         domainId = 0;
+        isDomain = false;
 
         numSendStatic = 0;
         numRecvStatic = 0;

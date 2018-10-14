@@ -11,17 +11,17 @@
 
 #include "main.h"
 
-#define AFRICA_KADDR 0xffffffff00000000
-
 u64 (*kproc_add_handle)(KProcessHandleTable* table, u32* out, void* obj, u16 id);
 u32 (*kproc_map_mem)(KMemoryManager* memmanage, u64 paddr, u64 size, u8 perms);
 u32 (*kproc_query_mem)(struct MemoryInfo* meminfo, u32* pageinfo, u32 kproc_hand, u64 addr);
+void (*kprintf)(char* fmt, ...);
 
 void kfuncs_init()
 {
     kproc_add_handle = (u64 (*)(KProcessHandleTable* table, u32* out, void* obj, u16 id))(g_aslrBase + 0xABB0);
     kproc_map_mem = (u32 (*)(KMemoryManager* memmanage, u64 paddr, u64 size, u8 perms))(g_aslrBase + 0x19668);
     kproc_query_mem = (u32 (*)(struct MemoryInfo* meminfo, u32* pageinfo, u32 kproc_hand, u64 addr))(g_aslrBase + 0x3A0CC);
+    kprintf = (void (*)(char* fmt, ...))(g_aslrBase + 0x1F44);
 }
 
 

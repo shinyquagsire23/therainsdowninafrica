@@ -11,7 +11,8 @@
 
 const int UART_OFFSETS[5] = {0, 0x40, 0x200, 0x300, 0x400};
 
-u64 uart_lock;
+u64 uart_lock = 0;
+u64 uart_print_lock = 0;
 char log_buf[0x200];
 
 void uart_configure_a(void)
