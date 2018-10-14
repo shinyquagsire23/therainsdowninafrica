@@ -77,6 +77,19 @@ int fsp_redir_ifilesystem_hook(u64 *regs_in, u64 *regs_out, void* handler_ptr, c
         || handling_cmd == 11 || handling_cmd == 12 || handling_cmd == 13
         || handling_cmd == 14)
     {
+        FspSrv fsp;
+        IFileSystem sdcard;
+
+        fsp = sm_get_fspsrv();
+
+        // Get SD card handle, if we can't get a handle then let it be
+        u32 ret = fsp.openSdCardFileSystem(&sdcard);
+        if (ret)
+        {
+            fsp.close();
+            return 0;
+        }
+
         char* file_path_raw = (char*)packet->get_static_descs()[0].get_addr();
         char* file_path = (char*)malloc(0x301);
         
@@ -89,6 +102,12 @@ int fsp_redir_ifilesystem_hook(u64 *regs_in, u64 *regs_out, void* handler_ptr, c
         
         packet->get_static_descs()[0].set_addr((u64)africa_kaddr_to_uaddr(file_path));
         
+        regs_out[0] = sdcard.h;
+        if (packet->is_domain_message())
+        {
+            packet->get_domain_header()->objectId = sdcard.toDomainId();
+        }
+
         svcRunFunc(regs_in, regs_out, handler_ptr);
         
         free(file_path);
@@ -99,6 +118,19 @@ int fsp_redir_ifilesystem_hook(u64 *regs_in, u64 *regs_out, void* handler_ptr, c
     // RenameFile, RenameDirectory
     if (handling_cmd == 5 || handling_cmd == 6)
     {
+        FspSrv fsp;
+        IFileSystem sdcard;
+
+        fsp = sm_get_fspsrv();
+
+        // Get SD card handle, if we can't get a handle then let it be
+        u32 ret = fsp.openSdCardFileSystem(&sdcard);
+        if (ret)
+        {
+            fsp.close();
+            return 0;
+        }
+
         char* file_path_raw1 = (char*)packet->get_static_descs()[0].get_addr();
         char* file_path_raw2 = (char*)packet->get_static_descs()[1].get_addr();
         char* file_path1 = (char*)malloc(0x301);
@@ -115,7 +147,13 @@ int fsp_redir_ifilesystem_hook(u64 *regs_in, u64 *regs_out, void* handler_ptr, c
         
         packet->get_static_descs()[0].set_addr((u64)africa_kaddr_to_uaddr(file_path1));
         packet->get_static_descs()[1].set_addr((u64)africa_kaddr_to_uaddr(file_path2));
-        
+
+        regs_out[0] = sdcard.h;
+        if (packet->is_domain_message())
+        {
+            packet->get_domain_header()->objectId = sdcard.toDomainId();
+        }
+
         svcRunFunc(regs_in, regs_out, handler_ptr);
         
         free(file_path1);
