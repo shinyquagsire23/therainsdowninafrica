@@ -15,7 +15,7 @@
 #include "hos/svc.h"
 #include "hos/fs.h"
 
-#define FSP_EXTRA_DEBUG
+//#define FSP_EXTRA_DEBUG
 
 const char* hbl_path = "/hbl";
 
@@ -65,15 +65,17 @@ int fsp_redir_ifilesystem_hook(u64 *regs_in, u64 *regs_out, void* handler_ptr, c
     HIPCPacket* packet = get_current_packet();
     HIPCBasicPacket* basic = packet->get_data<HIPCBasicPacket>();
 
+    u32 handling_cmd = basic->cmd;
+
 #ifdef FSP_EXTRA_DEBUG
-    log_printf("IFileSystem cmd %x from %s\r\n", basic->cmd, kproc->name);
+    log_printf("IFileSystem cmd %x from %s\r\n", handling_cmd, kproc->name);
 #endif
 
     // CreateFile, DeleteFile, CreateDirectory, DeleteDirectory
-    if (basic->cmd == 0 || basic->cmd == 1 || basic->cmd == 2 
-        || basic->cmd == 3 || basic->cmd == 4 || basic->cmd == 7
-        || basic->cmd == 11 || basic->cmd == 12 || basic->cmd == 13
-        || basic->cmd == 14)
+    if (handling_cmd == 0 || handling_cmd == 1 || handling_cmd == 2 
+        || handling_cmd == 3 || handling_cmd == 4 || handling_cmd == 7
+        || handling_cmd == 11 || handling_cmd == 12 || handling_cmd == 13
+        || handling_cmd == 14)
     {
         char* file_path_raw = (char*)packet->get_static_descs()[0].get_addr();
         char* file_path = (char*)malloc(0x301);
@@ -95,7 +97,7 @@ int fsp_redir_ifilesystem_hook(u64 *regs_in, u64 *regs_out, void* handler_ptr, c
     }
     
     // RenameFile, RenameDirectory
-    if (basic->cmd == 5 || basic->cmd == 6)
+    if (handling_cmd == 5 || handling_cmd == 6)
     {
         char* file_path_raw1 = (char*)packet->get_static_descs()[0].get_addr();
         char* file_path_raw2 = (char*)packet->get_static_descs()[1].get_addr();
@@ -122,12 +124,13 @@ int fsp_redir_ifilesystem_hook(u64 *regs_in, u64 *regs_out, void* handler_ptr, c
         return 1;
     }
 
-    if (basic->cmd == 8 || basic->cmd == 9)
+    // OpenFile, OpenDirectory
+    if (handling_cmd == 8 || handling_cmd == 9)
     {
         FspSrv fsp;
         IFileSystem sdcard;
-        IFile redirfile;
-        u32 ret, file_ret, created_domain, created_handle;
+        Handle redirfile;
+        u32 ret, file_ret, created_domain, out_hand;
 
         char* file_path;
         char* file_path_raw = (char*)packet->get_static_descs()[0].get_addr();
@@ -158,7 +161,7 @@ int fsp_redir_ifilesystem_hook(u64 *regs_in, u64 *regs_out, void* handler_ptr, c
         {
             // Get <redir>/<file> handle
             u32 out_hand;
-            if (basic->cmd == 8)
+            if (handling_cmd == 8)
             {
                 IFile file;
                 file_ret = sdcard.openFile(file_path, flags, &file);
@@ -202,11 +205,17 @@ int fsp_redir_ifilesystem_hook(u64 *regs_in, u64 *regs_out, void* handler_ptr, c
         log_printf("returned %x, err %x, hand %x\r\n", regs_out[0], basic->ret, created_domain);
 #endif
 
-        // Get <redir>/<file> handle
-        file_ret = sdcard.openFile(file_path, flags, &redirfile);
+        if (handling_cmd == 8)
+        {
+            file_ret = sdcard.openFile(file_path, flags, (IFile*)&redirfile);
+        }
+        else
+        {
+            file_ret = sdcard.openDirectory(file_path, flags, &redirfile);
+        }
 
 #ifdef FSP_EXTRA_DEBUG
-        log_printf("OpenFile(%s) got return %x, handle %x\r\n", file_path, file_ret, redirfile.h);
+        log_printf("OpenFile/OpenDirectory(%s) got return %x, handle %x\r\n", file_path, file_ret, redirfile.h);
 #endif
 
         // Craft return
@@ -292,7 +301,7 @@ int fsp_srv_hook(u64 *regs_in, u64 *regs_out, void* handler_ptr, void* extra)
         packet = get_current_packet();
         basic = packet->get_data<HIPCBasicPacket>();
         
-        if (basic->ret) return 0;
+        if (basic->ret) return 1;
         
         if (packet->is_domain_message())
         {
