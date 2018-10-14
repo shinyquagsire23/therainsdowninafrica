@@ -25,16 +25,21 @@ hook1_900006CC.bin: hook1.s
 	@$(OBJCOPY) -O binary hook.out $@
 	@rm hook.out
 
-hook2_90058058.bin: hook2.s
-	@$(AS) $< -o hook.out
-	@$(OBJCOPY) -O binary hook.out $@
-	@rm hook.out
+patch1.bin: patch1.s
+	@$(AS) $< -o patch.out
+	@$(OBJCOPY) -O binary patch.out $@
+	@rm patch.out
 
-0_saltedkernel_90000000.bin: 0_kernel_90000000.bin hook1_900006CC.bin hook2_90058058.bin hashtagblessed/hashtagblessed.bin
-	@python2 kernelpatch.py 0_kernel_90000000.bin hook1_900006CC.bin hook2_90058058.bin hashtagblessed/hashtagblessed.bin $@
+patch2.bin: patch2.s
+	@$(AS) $< -o patch.out
+	@$(OBJCOPY) -O binary patch.out $@
+	@rm patch.out
+
+0_saltedkernel_90000000.bin: 0_kernel_90000000.bin hook1_900006CC.bin patch1.bin patch2.bin hashtagblessed/hashtagblessed.bin
+	@python2 kernelpatch.py 0_kernel_90000000.bin hook1_900006CC.bin patch1.bin patch2.bin hashtagblessed/hashtagblessed.bin $@
 	@echo Patched to $@
 	
 clean:
 	@cd therainsdowninafrica && make clean
 	@cd hashtagblessed && make clean
-	@rm -f hook1_900006CC.bin hook2_90058058.bin 0_saltedkernel_90000000.bin
+	@rm -f hook1_900006CC.bin patch1.bin patch2.bin 0_saltedkernel_90000000.bin

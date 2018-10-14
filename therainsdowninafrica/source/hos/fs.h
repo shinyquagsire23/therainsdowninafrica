@@ -57,9 +57,11 @@ struct DomainPair : Handle
         p->domain_cmd(HIPCDomainCommand_CloseVirtualHandle)->send_to_domain(h, d);
         p->free_data();
 
+        u32 retval = p->ret;
+
         delete p;
 
-        return p->ret;
+        return retval;
     }
 };
 
@@ -80,9 +82,11 @@ struct IFile : Handle
             *out = *p->get_data<u64>();
         p->free_data();
 
+        u32 retval = p->ret ? p->ret : p->ipcRet;
+
         delete p;
-        
-        return p->ret ? p->ret : p->ipcRet;
+
+        return retval;
     }
 
     u32 write(u64 offset, void *buf, size_t len)
@@ -98,9 +102,11 @@ struct IFile : Handle
         p->ipc_cmd(1)->push_arg<u64>(1)->push_arg<u64>(offset)->push_arg<u64>(len)->push_send_buffer(buf, len, 1)->send_to(h);
         p->free_data();
 
+        u32 retval = p->ret ? p->ret : p->ipcRet;
+
         delete p;
-        
-        return p->ret ? p->ret : p->ipcRet;
+
+        return retval;
     }
 };
 
@@ -121,9 +127,11 @@ struct IFileSystem : Handle
         p->ipc_cmd(0)->push_arg<u64>(0)->push_arg<u64>(size)->push_arg<u32>(0)->push_static_buffer(path_temp, 0x301)->send_to(h);
         p->free_data();
 
+        u32 retval = p->ret ? p->ret : p->ipcRet;
+
         delete p;
-        
-        return p->ret ? p->ret : p->ipcRet;
+
+        return retval;
     }
 
     u32 deleteFile(const char* path)
@@ -139,9 +147,11 @@ struct IFileSystem : Handle
         p->ipc_cmd(1)->push_static_buffer(path_temp, 0x301)->send_to(h);
         p->free_data();
 
+        u32 retval = p->ret ? p->ret : p->ipcRet;
+
         delete p;
-        
-        return p->ret ? p->ret : p->ipcRet;
+
+        return retval;
     }
     
     u32 openFile(const char* path, u32 flags, IFile* out)
@@ -159,9 +169,11 @@ struct IFileSystem : Handle
         
         *out = IFile(p->get_handle(0));
 
+        u32 retval = p->ret ? p->ret : p->ipcRet;
+
         delete p;
-        
-        return p->ret ? p->ret : p->ipcRet;
+
+        return retval;
     }
 };
 
@@ -179,9 +191,11 @@ struct FspSrv : Handle
         *out = IFileSystem(p->get_handle(0));
         p->free_data();
 
+        u32 retval = p->ret ? p->ret : p->ipcRet;
+
         delete p;
 
-        return p->ret ? p->ret : p->ipcRet;
+        return retval;
     }
 };
 

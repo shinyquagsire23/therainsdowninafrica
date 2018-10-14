@@ -174,7 +174,17 @@ struct KSession : KAutoObject
     KServerSession server;
     KClientSession client;
     u64 hasInitted;
+
+    // extra
+    u64 magicTouch;
+    void* sendHandler;
+    void* sendExtra;
+    void* closeHandler;
+    void* closeExtra;
+    u64 unused1;
 };
+
+static_assert(sizeof(KSession) == 0x110+0x30, "Bad KSession size");
 
 struct KProcessCapabilities
 {
@@ -267,6 +277,14 @@ struct KProcess : KSynchronizationObject
     KHandleEntry* getHandleEntry(u32 handle)
     {
         return &this->handleTable.entries[handle & 0x7FFF];
+    }
+
+    u64 getHandleTypeId(u32 handle)
+    {
+        KHandleEntry* entry = getHandleEntry(handle);
+        if (entry) return entry->typeId;
+
+        return 0;
     }
 
     template <class T>

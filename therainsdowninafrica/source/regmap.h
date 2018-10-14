@@ -62,7 +62,7 @@ struct RegMap
         }
         
         mutex_unlock(&access_mutex);
-        return NULL;
+        return (B)NULL;
     }
     
     void set(A a, B b)

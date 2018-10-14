@@ -48,7 +48,7 @@ KClientSession* sm_get_fspsrv()
     return loader_fspsrv_sess;
 }
 
-int sm_ipc_handler(u64 *regs_in, u64 *regs_out, void* handler_ptr)
+int sm_ipc_handler(u64 *regs_in, u64 *regs_out, void* handler_ptr, void* extra)
 {
     KProcess* kproc = getCurrentContext()->pCurrentProcess;
     KClientSession* client = kproc->getKObjectFromHandle<KClientSession>(regs_in[0]);
@@ -116,7 +116,7 @@ int sm_ipc_handler(u64 *regs_in, u64 *regs_out, void* handler_ptr)
     return 0;
 }
 
-int test_ipc_handler(u64 *regs_in, u64 *regs_out, void* handler_ptr)
+int test_ipc_handler(u64 *regs_in, u64 *regs_out, void* handler_ptr, void* extra)
 {
     log_printf("test handler\r\n");
 
@@ -125,9 +125,8 @@ int test_ipc_handler(u64 *regs_in, u64 *regs_out, void* handler_ptr)
 }
 
 const char* hbl_path = "/hbl";
-RegMap<u64, u64, 0x40> file_mappings;
 
-int fsp_ldr_ifile_hook(u64 *regs_in, u64 *regs_out, void* handler_ptr)
+int fsp_ldr_ifile_hook(u64 *regs_in, u64 *regs_out, void* handler_ptr, DomainPair* pair)
 {
     KProcess* kproc = getCurrentContext()->pCurrentProcess;
     KClientSession* client = kproc->getKObjectFromHandle<KClientSession>(regs_in[0]);
@@ -135,16 +134,13 @@ int fsp_ldr_ifile_hook(u64 *regs_in, u64 *regs_out, void* handler_ptr)
     HIPCPacket* packet = get_current_packet();
     HIPCBasicPacket* basic = packet->get_data<HIPCBasicPacket>();
 
-    u32 file_hand_to_use = file_mappings.get(packet->get_domain_header()->objectId) >> 32;
-    u32 file_domain_to_use = file_mappings.get(packet->get_domain_header()->objectId) & 0xFFFFFFFF;
-
 #ifdef SM_EXTRA_DEBUG
     log_printf("CodeFile cmd %x from %s\r\n", basic->cmd, kproc->name);
 #endif
 
     // Just swap in the handle and domain object ID
-    regs_in[0] = file_hand_to_use;
-    packet->get_domain_header()->objectId = file_domain_to_use;
+    regs_in[0] = pair->h;
+    packet->get_domain_header()->objectId = pair->d;
 
     svcRunFunc(regs_in, regs_out, handler_ptr);
 
@@ -155,25 +151,14 @@ int fsp_ldr_ifile_hook(u64 *regs_in, u64 *regs_out, void* handler_ptr)
     return 1;
 }
 
-int fsp_ldr_ifile_closehook(u64 *regs_in, u64 *regs_out, void* handler_ptr)
+void fsp_ldr_ifile_closehook(DomainPair* pair)
 {
-    KProcess* kproc = getCurrentContext()->pCurrentProcess;
-    KClientSession* client = kproc->getKObjectFromHandle<KClientSession>(regs_in[0]);
-
-    HIPCPacket* packet = get_current_packet();
-    HIPCBasicPacket* basic = packet->get_data<HIPCBasicPacket>();
-
-    u32 file_hand_to_use = file_mappings.get(packet->get_domain_header()->objectId) >> 32;
-    u32 file_domain_to_use = file_mappings.get(packet->get_domain_header()->objectId) & 0xFFFFFFFF;
-
     // Delete our objects with theirs
-    ksvcCloseHandle(file_hand_to_use);
-    file_mappings.clear(packet->get_domain_header()->objectId);
-
-    return 0;
+    pair->close();
+    delete pair;
 }
 
-int fsp_ldr_ifilesystem_hook(u64 *regs_in, u64 *regs_out, void* handler_ptr)
+int fsp_ldr_ifilesystem_hook(u64 *regs_in, u64 *regs_out, void* handler_ptr, void* extra)
 {
     KProcess* kproc = getCurrentContext()->pCurrentProcess;
     KClientSession* client = kproc->getKObjectFromHandle<KClientSession>(regs_in[0]);
@@ -231,10 +216,9 @@ int fsp_ldr_ifilesystem_hook(u64 *regs_in, u64 *regs_out, void* handler_ptr)
 
         if (!file_ret)
         {
-            u32 file_domain = logfile.toDomainId();
-            file_mappings.set(basic->extra[0], ((u64)logfile.h << 32) | file_domain);
-            ipc_bind_domainsessionpair_to_handler(client, basic->extra[0], (void*)fsp_ldr_ifile_hook);
-            ipc_bind_domainsessionpair_to_closehandler(client, basic->extra[0], (void*)fsp_ldr_ifile_closehook);
+            DomainPair* pair = new DomainPair(logfile.h, logfile.toDomainId());
+            ipc_bind_domainsessionpair_to_handler(client, basic->extra[0], (void*)fsp_ldr_ifile_hook, (void*)pair);
+            ipc_bind_domainsessionpair_to_closehandler(client, basic->extra[0], (void*)fsp_ldr_ifile_closehook, (void*)pair);
         }
         else
         {
@@ -251,7 +235,7 @@ int fsp_ldr_ifilesystem_hook(u64 *regs_in, u64 *regs_out, void* handler_ptr)
     return 0;
 }
 
-int fsp_ldr_hook(u64 *regs_in, u64 *regs_out, void* handler_ptr)
+int fsp_ldr_hook(u64 *regs_in, u64 *regs_out, void* handler_ptr, void* extra)
 {
     KProcess* kproc = getCurrentContext()->pCurrentProcess;
     KClientSession* client = kproc->getKObjectFromHandle<KClientSession>(regs_in[0]);

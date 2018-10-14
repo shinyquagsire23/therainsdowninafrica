@@ -18,6 +18,8 @@
 
 //#define EXTRA_DEBUG
 
+#define INITTED_MAGIC 0xF00FB00BB00BF00F
+
 struct DomainSessionPair
 {
     KClientSession* session;
@@ -25,16 +27,23 @@ struct DomainSessionPair
     u32 pad;
 };
 
+struct HandlerPair
+{
+    void* handler;
+    void* extra;
+
+    HandlerPair() : handler(nullptr), extra(nullptr) {}
+    HandlerPair(void* handler) : handler(handler), extra(nullptr) {}
+    HandlerPair(void* handler, void* extra) : handler(handler), extra(extra) {}
+};
+
 u64 replacement_vtable[0x20];
 int (*old_destruct)(KClientSession* client);
 
 RegMap<u64, void*, 0x200> registered_handlers_by_name;
 
-RegMap<KClientSession*, u64, 0x200> clientsession_name;
-
-RegMap<KClientSession*, void*, 0x2000> client_to_handler;
-RegMap<DomainSessionPair, void*, 0x2000> clientdomainpair_to_handler;
-RegMap<DomainSessionPair, void*, 0x2000> clientdomainpair_to_closehandler;
+RegMap<DomainSessionPair, HandlerPair, 0x1000> clientdomainpair_to_handler;
+RegMap<DomainSessionPair, HandlerPair, 0x1000> clientdomainpair_to_closehandler;
 
 void ipc_register_handler_for_named_port(char* portnamestr, void* handler)
 {
@@ -67,41 +76,78 @@ int destruct_intercept(KClientSession* client)
 
     if (!client->refcnt)
     {
-        clientsession_name.clear(client);
-        client_to_handler.clear(client);
+        void (*handler)(void* extra) = (void(*)(void* extra))client->parentSession->closeHandler;
+        if (handler)
+            handler(client->parentSession->closeExtra);
+
+        client->parentSession->magicTouch = 0;
+        client->parentSession->sendHandler = nullptr;
+        client->parentSession->sendExtra = nullptr;
+        client->parentSession->closeHandler = nullptr;
+        client->parentSession->closeExtra = nullptr;
     }
 }
 
-void ipc_bind_client_to_handler(KClientSession* client, void* handler)
+void kclientsession_swap_vtable(KClientSession* client)
 {
-    client_to_handler.set(client, handler);
-
     // Swap vtable
     memcpy(replacement_vtable, client->vtable, sizeof(replacement_vtable));
     old_destruct = (int (*)(KClientSession* client))replacement_vtable[2];
 
     replacement_vtable[2] = (u64)destruct_intercept;
     client->vtable = (void**)replacement_vtable;
+}
+
+void ipc_bind_client_to_handler(KClientSession* client, void* handler, void* extra)
+{
+    if (client->parentSession->magicTouch != INITTED_MAGIC)
+    {
+        client->parentSession->magicTouch = INITTED_MAGIC;
+        client->parentSession->closeHandler = nullptr;
+        client->parentSession->closeExtra = nullptr;
+    }
+    client->parentSession->sendHandler = handler;
+    client->parentSession->sendExtra = extra;
+
+    kclientsession_swap_vtable(client);
 
 #ifdef EXTRA_DEBUG
     log_printf("bind client %p to handler %p\r\n", client, handler);
 #endif
 }
 
-void ipc_bind_domainsessionpair_to_handler(KClientSession* client, u32 domain, void* handler)
+void ipc_bind_client_to_closehandler(KClientSession* client, void* handler, void* extra)
 {
-    DomainSessionPair p = {client, domain, 0};
-    clientdomainpair_to_handler.set(p, handler);
+    if (client->parentSession->magicTouch != INITTED_MAGIC)
+    {
+        client->parentSession->magicTouch = INITTED_MAGIC;
+        client->parentSession->sendHandler = nullptr;
+        client->parentSession->sendExtra = nullptr;
+    }
+    client->parentSession->closeHandler = handler;
+    client->parentSession->closeExtra = extra;
+
+    kclientsession_swap_vtable(client);
 
 #ifdef EXTRA_DEBUG
-    log_printf("bind pair %p-%x to handler %p\r\n", client, domain, handler);
+    log_printf("bind client %p to close handler %p\r\n", client, handler);
 #endif
 }
 
-void ipc_bind_domainsessionpair_to_closehandler(KClientSession* client, u32 domain, void* handler)
+void ipc_bind_domainsessionpair_to_handler(KClientSession* client, u32 domain, void* handler, void* extra)
 {
     DomainSessionPair p = {client, domain, 0};
-    clientdomainpair_to_closehandler.set(p, handler);
+    clientdomainpair_to_handler.set(p, HandlerPair(handler, extra));
+
+#ifdef EXTRA_DEBUG
+    log_printf("bind pair %p-%x to handler %p,%p\r\n", client, domain, handler);
+#endif
+}
+
+void ipc_bind_domainsessionpair_to_closehandler(KClientSession* client, u32 domain, void* handler, void* extra)
+{
+    DomainSessionPair p = {client, domain, 0};
+    clientdomainpair_to_closehandler.set(p, HandlerPair(handler, extra));
 
 #ifdef EXTRA_DEBUG
     log_printf("bind pair %p-%x to close handler %p\r\n", client, domain, handler);
@@ -111,9 +157,6 @@ void ipc_bind_domainsessionpair_to_closehandler(KClientSession* client, u32 doma
 void ipc_bind_client_by_name(KClientSession* clientsession, u64 kportname)
 {
     void* client_handler = registered_handlers_by_name.get(kportname);
-
-    // Keep notes on names
-    clientsession_name.set(clientsession, kportname);
 
     if (client_handler != nullptr)
         ipc_bind_client_to_handler(clientsession, client_handler);
@@ -151,7 +194,11 @@ int sendSyncRequest_handler(u64 *regs_in, u64 *regs_out, void* handler_ptr)
     bool is_domain = packet->is_domain_message();
 
     bool handler_handled = false;
-    void* client_handler = client_to_handler.get(client);
+    HandlerPair handler_pair;
+    if (client->parentSession->magicTouch == INITTED_MAGIC)
+    {
+        handler_pair = HandlerPair(client->parentSession->sendHandler, client->parentSession->sendExtra);
+    }
 
     if (type == HIPCPacketType_Request || type == HIPCPacketType_RequestWithContext || type == HIPCPacketType_LegacyRequest)
     {
@@ -160,39 +207,45 @@ int sendSyncRequest_handler(u64 *regs_in, u64 *regs_out, void* handler_ptr)
             DomainSessionPair p = {client, packet->get_domain_header()->objectId, 0};
             if (packet->get_domain_header()->cmd == HIPCDomainCommand_CloseVirtualHandle)
             {
-                client_handler = clientdomainpair_to_closehandler.get(p);
+                handler_pair = clientdomainpair_to_closehandler.get(p);
                 clientdomainpair_to_handler.clear(p);
                 clientdomainpair_to_closehandler.clear(p);
+
+                if (handler_pair.handler)
+                {
+                    void (*handler)(void* extra) = (void(*)(void* extra))handler_pair.handler;
+                    handler(handler_pair.extra);
+
+                    handler_pair.handler = nullptr;
+                }
             }
             else
-                client_handler = clientdomainpair_to_handler.get(p);
+                handler_pair = clientdomainpair_to_handler.get(p);
         }
 
-        if (client_handler)
+        if (handler_pair.handler)
         {
-            int (*handler)(u64 *regs_in, u64 *regs_out, void* handler_ptr) = (int(*)(u64 *regs_in, u64 *regs_out, void* handler_ptr))client_handler;
-            handler_handled = handler(regs_in, regs_out, handler_ptr);
+            int (*handler)(u64 *regs_in, u64 *regs_out, void* handler_ptr, void* extra) = (int(*)(u64 *regs_in, u64 *regs_out, void* handler_ptr, void* extra))handler_pair.handler;
+            handler_handled = handler(regs_in, regs_out, handler_ptr, handler_pair.extra);
         }
     }
-
-    if (type == HIPCPacketType_Control || type == HIPCPacketType_ControlWithContext)
+    else if (type == HIPCPacketType_Control || type == HIPCPacketType_ControlWithContext)
     {
         u32 arg = basic->extra[0];
 
-        if (!handler_handled)
-            svcRunFunc(regs_in, regs_out, handler_ptr);
+        svcRunFunc(regs_in, regs_out, handler_ptr);
+        handler_handled = true;
 
-        client_handler = client_to_handler.get(client);
         basic = packet->get_data<HIPCBasicPacket>();
         if (cmd == 0)
         {
-            if (client_handler)
+            if (handler_pair.handler)
             {
 #ifdef EXTRA_DEBUG
-                log_printf("map client-domain %p-%x to handler %p\r\n", client, basic->extra[0], client_handler);
+                log_printf("map client-domain %p-%x to handler %p\r\n", client, basic->extra[0], handler_pair.handler);
 #endif
 
-                ipc_bind_domainsessionpair_to_handler(client, basic->extra[0], client_handler);
+                ipc_bind_domainsessionpair_to_handler(client, basic->extra[0], handler_pair.handler, handler_pair.extra);
             }
         }
         else if (cmd == 1)
@@ -206,10 +259,10 @@ int sendSyncRequest_handler(u64 *regs_in, u64 *regs_out, void* handler_ptr)
             DomainSessionPair p = {client, arg, 0};
 
             //TODO: close handlers for normal handles
-            client_handler = clientdomainpair_to_handler.get(p);
+            handler_pair = clientdomainpair_to_handler.get(p);
 
-            if (client_handler != nullptr)
-                ipc_bind_client_to_handler(client_new, client_handler);
+            if (handler_pair.handler != nullptr)
+                ipc_bind_client_to_handler(client_new, handler_pair.handler, handler_pair.extra);
         }
         else if (cmd == 2)
         {
@@ -219,8 +272,8 @@ int sendSyncRequest_handler(u64 *regs_in, u64 *regs_out, void* handler_ptr)
                 log_printf("cloned current object to handle (%x), %s, %p %p\r\n", packet->get_handle(0), kproc->name, client, client_new);
 #endif
 
-            if (client_handler != nullptr)
-                ipc_bind_client_to_handler(client_new, client_handler);
+            if (handler_pair.handler != nullptr)
+                ipc_bind_client_to_handler(client_new, handler_pair.handler, handler_pair.extra);
         }
         else if (cmd == 4)
         {
@@ -230,8 +283,8 @@ int sendSyncRequest_handler(u64 *regs_in, u64 *regs_out, void* handler_ptr)
             log_printf("cloned(ex %x) current object to handle (%x), %s, %p %p\r\n", arg, packet->get_handle(0), kproc->name, client, client_new);
 #endif
 
-            if (client_handler != nullptr)
-                ipc_bind_client_to_handler(client_new, client_handler);
+            if (handler_pair.handler != nullptr)
+                ipc_bind_client_to_handler(client_new, handler_pair.handler, handler_pair.extra);
         }
         else if (cmd != 3)
         {
@@ -240,12 +293,8 @@ int sendSyncRequest_handler(u64 *regs_in, u64 *regs_out, void* handler_ptr)
 #endif
         }
     }
-    else if (!handler_handled)
-    {
-        svcRunFunc(regs_in, regs_out, handler_ptr);
-    }
 
-    return 1;
+    return handler_handled;
 }
 
 int replyAndRecieve_handler(u64 *regs_in, u64 *regs_out, void* handler_ptr)
@@ -269,8 +318,8 @@ void ipc_module_init()
     svc_pre_bind(idSendSyncRequest, (void*)replyAndRecieve_handler);
 
     memset(&registered_handlers_by_name, 0, sizeof(registered_handlers_by_name));
-    memset(&client_to_handler, 0, sizeof(client_to_handler));
-    memset(&clientsession_name, 0, sizeof(clientsession_name));
+    memset(&clientdomainpair_to_handler, 0, sizeof(clientdomainpair_to_handler));
+    memset(&clientdomainpair_to_closehandler, 0, sizeof(clientdomainpair_to_closehandler));
 
     log_printf("ipc module initialized\r\n");
 }

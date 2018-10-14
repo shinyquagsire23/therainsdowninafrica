@@ -49,7 +49,7 @@ void log_printf(char* fmt, ...)
         ret = fsp.openSdCardFileSystem(&sdcard);
         if (ret)
         {
-            uart_debug_printf("log: openSdCardFileSystem got return %x\r\n", ret);
+            uart_debug_printf("log: openSdCardFileSystem got return %x, %x\r\n", ret, sdcard.h);
             goto sdcard_failed;
         }
 
