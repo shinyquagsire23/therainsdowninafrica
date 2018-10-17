@@ -226,6 +226,11 @@ int sendSyncRequest_handler(u64 *regs_in, u64 *regs_out, void* handler_ptr)
                         clientdomainpair_to_closehandler.clear(p);
                     }
                 }
+                else
+                {
+                    clientdomainpair_to_handler.clear(p);
+                    clientdomainpair_to_closehandler.clear(p);
+                }
             }
             else
                 handler_pair = clientdomainpair_to_handler.get(p);

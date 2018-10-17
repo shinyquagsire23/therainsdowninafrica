@@ -307,9 +307,16 @@ int fsp_ldr_hook(u64 *regs_in, u64 *regs_out, void* handler_ptr, void* extra)
         packet = get_current_packet();
         basic = packet->get_data<HIPCBasicPacket>();
 
-        if (!basic->ret && tid == 0x010000000000100d) // album applet
+        if (basic->ret || tid != 0x010000000000100d) return 1;
+
+        if (packet->is_domain_message())
         {
             fsp_redirect_domain_ifilesystem(client, basic->extra[0], hbl_path);
+        }
+        else
+        {
+            KClientSession* code = kproc->getKObjectFromHandle<KClientSession>(packet->get_handle(0));
+            fsp_redirect_ifilesystem(code, hbl_path);
         }
 
         return 1;
